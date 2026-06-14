@@ -2,9 +2,10 @@ package com.ytdl.android
 
 import com.ytdl.android.model.InnerTubeClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 
 class YTDLTest {
 
@@ -15,9 +16,9 @@ class YTDLTest {
         .build()
 
     @Test
-    fun `extract should return video info for public video`() = runTest(Dispatchers.Default) {
+    fun `extract should return video info for public video`() = runTest {
         val url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        val result = ytdl.extract(url)
+        val result = withContext(Dispatchers.IO) { ytdl.extract(url) }
 
         assertTrue("extract should succeed: ${result.exceptionOrNull()?.message}", result.isSuccess)
 
@@ -44,9 +45,9 @@ class YTDLTest {
     }
 
     @Test
-    fun `getFormats should return list of stream formats`() = runTest(Dispatchers.Default) {
+    fun `getFormats should return list of stream formats`() = runTest {
         val url = "https://youtu.be/dQw4w9WgXcQ"
-        val result = ytdl.getFormats(url)
+        val result = withContext(Dispatchers.IO) { ytdl.getFormats(url) }
 
         assertTrue("getFormats should succeed: ${result.exceptionOrNull()?.message}", result.isSuccess)
 
@@ -56,9 +57,9 @@ class YTDLTest {
     }
 
     @Test
-    fun `getStreamUrl should return playable URL`() = runTest(Dispatchers.Default) {
+    fun `getStreamUrl should return playable URL`() = runTest {
         val url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        val result = ytdl.getStreamUrl(url, preferAdaptive = false)
+        val result = withContext(Dispatchers.IO) { ytdl.getStreamUrl(url, preferAdaptive = false) }
 
         assertTrue("getStreamUrl should succeed: ${result.exceptionOrNull()?.message}", result.isSuccess)
 
@@ -71,8 +72,8 @@ class YTDLTest {
     }
 
     @Test
-    fun `extract with invalid URL should fail`() = runTest(Dispatchers.Default) {
-        val result = ytdl.extract("not-a-valid-url")
+    fun `extract with invalid URL should fail`() = runTest {
+        val result = withContext(Dispatchers.IO) { ytdl.extract("not-a-valid-url") }
         assertTrue("invalid URL should fail", result.isFailure)
     }
 
