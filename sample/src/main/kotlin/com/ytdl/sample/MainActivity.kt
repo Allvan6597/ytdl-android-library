@@ -199,9 +199,8 @@ class MainActivity : AppCompatActivity() {
             progress(false); return
         }
         withContext(Dispatchers.IO) {
-            val v = kotlinx.coroutines.async { pair.first.collect { log("VIDEO progress") } }
-            val a = kotlinx.coroutines.async { pair.second.collect { log("AUDIO progress") } }
-            v.await(); a.await()
+            pair.first.collect { log("VIDEO DASH") }
+            pair.second.collect { log("AUDIO DASH") }
         }
         progress(false)
         log("DASH complete. Use ffmpeg to merge.")
