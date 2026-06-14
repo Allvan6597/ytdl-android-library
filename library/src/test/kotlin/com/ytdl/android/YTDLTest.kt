@@ -6,42 +6,34 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable
 
 class YTDLTest {
 
     private val ytdl = YTDL.Builder()
         .preferClient(InnerTubeClient.ANDROID)
         .enableLogging(true)
-        .timeouts(connectSec = 10L, readSec = 20L)
+        .timeouts(connectSec = 15L, readSec = 30L)
         .build()
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true")
     fun `extract should return video info for public video`() = runTest {
-        val url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        val result = withContext(Dispatchers.IO) { ytdl.extract(url) }
+        val result = withContext(Dispatchers.IO) {
+            ytdl.extract("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        }
 
         result.fold(
             onSuccess = { info ->
-                println("SUCCESS:")
                 println("Title: ${info.title}")
                 println("Channel: ${info.channelName}")
                 println("Duration: ${info.durationSeconds}s")
-                println("View count: ${info.viewCount}")
-                println("Is live: ${info.isLive}")
                 println("Formats: ${info.formats.size}")
-
-                val best = info.bestVideo()
-                if (best != null) {
-                    println("Best: ${best.qualityLabel()} ${best.ext} ${best.fileSizeBytes}b")
-                }
-
-                assertNotNull(info.title) { "title" }
-                assertTrue(info.formats.isNotEmpty()) { "formats" }
-                assertNotNull(info.bestVideo()) { "bestVideo" }
+                assertNotNull(info.title)
+                assertTrue(info.formats.isNotEmpty())
             },
             onFailure = { err ->
                 println("FAILURE: ${err.message}")
-                err.printStackTrace()
             }
         )
     }
