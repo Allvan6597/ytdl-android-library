@@ -173,21 +173,21 @@ class MainActivity : AppCompatActivity() {
         log("Saving: ${file.name}")
 
         withContext(Dispatchers.IO) {
-            ytdl.downloadFormat(format, file, resume = true)
-        }.collect { r ->
-            when (r) {
-                is DownloadResult.Progress -> {
-                    val mb = r.downloadedBytes / 1048576
-                    val total = if (r.totalBytes > 0) "/${r.totalBytes / 1048576}MB" else ""
-                    log("DL ${r.percentage.toInt()}% ${mb}MB$total ${r.speedBps / 1048576}MB/s")
-                }
-                is DownloadResult.Success -> {
-                    log("COMPLETE: ${r.filePath}")
-                    progress(false)
-                }
-                is DownloadResult.Error -> {
-                    log("DOWNLOAD ERROR: ${r.message}")
-                    progress(false)
+            ytdl.downloadFormat(format, file, resume = true).collect { r ->
+                when (r) {
+                    is DownloadResult.Progress -> {
+                        val mb = r.downloadedBytes / 1048576
+                        val total = if (r.totalBytes > 0) "/${r.totalBytes / 1048576}MB" else ""
+                        log("DL ${r.percentage.toInt()}% ${mb}MB$total ${r.speedBps / 1048576}MB/s")
+                    }
+                    is DownloadResult.Success -> {
+                        log("COMPLETE: ${r.filePath}")
+                        progress(false)
+                    }
+                    is DownloadResult.Error -> {
+                        log("DOWNLOAD ERROR: ${r.message}")
+                        progress(false)
+                    }
                 }
             }
         }
@@ -198,26 +198,13 @@ class MainActivity : AppCompatActivity() {
             log("ERROR: No DASH formats available.")
             progress(false); return
         }
-        var vDone = false; var aDone = false
-
-        lifecycleScope.launch {
-            pair.first.collect { r ->
-                when (r) {
-                    is DownloadResult.Progress -> log("VIDEO ${r.percentage.toInt()}% ${r.downloadedBytes / 1048576}MB")
-                    is DownloadResult.Success -> { vDone = true; log("VIDEO DONE"); if (vDone && aDone) { progress(false); log("DASH complete. Use ffmpeg to merge.") } }
-                    is DownloadResult.Error -> { log("VIDEO ERROR: ${r.message}"); progress(false) }
-                }
-            }
+        withContext(Dispatchers.IO) {
+            val v = kotlinx.coroutines.async { pair.first.collect { log("VIDEO progress") } }
+            val a = kotlinx.coroutines.async { pair.second.collect { log("AUDIO progress") } }
+            v.await(); a.await()
         }
-        lifecycleScope.launch {
-            pair.second.collect { r ->
-                when (r) {
-                    is DownloadResult.Progress -> log("AUDIO ${r.percentage.toInt()}% ${r.downloadedBytes / 1048576}MB")
-                    is DownloadResult.Success -> { aDone = true; log("AUDIO DONE"); if (vDone && aDone) { progress(false); log("DASH complete. Use ffmpeg to merge.") } }
-                    is DownloadResult.Error -> { log("AUDIO ERROR: ${r.message}") }
-                }
-            }
-        }
+        progress(false)
+        log("DASH complete. Use ffmpeg to merge.")
     }
 
     // ═══ Storage (all API levels, no permissions needed) ═══
