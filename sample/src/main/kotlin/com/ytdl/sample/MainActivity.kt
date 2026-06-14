@@ -120,7 +120,8 @@ class MainActivity : AppCompatActivity() {
 
                     log("--- ${info.formats.size} formats ---")
                     info.formats.forEach { f ->
-                        val size = if (f.fileSizeBytes != null) "${f.fileSizeBytes / 1048576}MB" else "?"
+                        val fileSize = f.fileSizeBytes
+                        val size = if (fileSize != null) "${fileSize / 1048576}MB" else "?"
                         log("${f.formatId} | ${f.qualityLabel().padEnd(10)} | ${f.ext} | $size")
                     }
                     log("DONE.")
