@@ -50,6 +50,12 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed", "standardOut", "standardError")
+        showExceptions = true
+        showStackTraces = true
+        showCauses = true
+    }
 }
 
 publishing {
