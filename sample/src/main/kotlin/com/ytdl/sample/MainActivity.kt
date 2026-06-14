@@ -1,8 +1,12 @@
 package com.ytdl.sample
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.widget.Toast
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.ytdl.android.YTDL
@@ -12,186 +16,224 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
-/**
- * مثال استخدام كامل لمكتبة YTDLAndroid
- *
- * هذا ملف Sample — يُظهر كيفية دمج المكتبة في تطبيقك
- */
 class MainActivity : AppCompatActivity() {
 
-    // إنشاء instance واحد من YTDL
     private val ytdl = YTDL.Builder()
-        .preferClient(InnerTubeClient.ANDROID)  // الأفضل لـ Android
-        .enableLogging(true)                    // logging للـ debug
+        .preferClient(InnerTubeClient.ANDROID)
+        .enableLogging(true)
         .timeouts(connectSec = 30L, readSec = 60L)
         .build()
+
+    private lateinit var urlInput: EditText
+    private lateinit var logView: TextView
+    private lateinit var progressBar: ProgressBar
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ── مثال 1: استخراج معلومات فيديو ──
-        lifecycleScope.launch {
-            extractVideoInfo("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
         }
 
-        // ── مثال 2: الحصول على stream URL للتشغيل المباشر ──
-        lifecycleScope.launch {
-            getStreamUrlForPlayer("https://youtu.be/dQw4w9WgXcQ")
+        urlInput = EditText(this).apply {
+            hint = "YouTube URL"
+            textSize = 14f
+        }
+        root.addView(urlInput, LinearLayout.LayoutParams(-1, -2))
+
+        fun btn(text: String, onClick: () -> Unit) = Button(this).apply {
+            setText(text)
+            textSize = 12f
+            setOnClickListener { onClick() }
         }
 
-        // ── مثال 3: تحميل الفيديو ──
+        fun row(vararg buttons: Button) = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            buttons.forEach { addView(it) }
+        }
+
+        root.addView(row(btn("Extract") { doExtract() }, btn("Stream URL") { doStream() }))
+        root.addView(row(btn("Download (best)") { doDownload(false) }, btn("Download (DASH)") { doDownload(true) }))
+        root.addView(row(btn("Copy Log") { copyLog() }, btn("Clear") { logView.text = "" }))
+
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            isIndeterminate = true
+            visibility = android.view.View.GONE
+        }
+        root.addView(progressBar)
+
+        logView = TextView(this).apply {
+            textSize = 10f
+            isVerticalScrollBarEnabled = true
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        root.addView(ScrollView(this).apply { addView(logView) }, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        setContentView(root)
+        log("Ready. Paste YouTube URL and tap a button.")
+    }
+
+    private fun log(msg: String) {
+        val ts = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        runOnUiThread { logView.append("[$ts] $msg\n") }
+    }
+
+    private fun copyLog() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("YTDL Log", logView.text))
+        Toast.makeText(this, "Log copied!", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun progress(show: Boolean) {
+        runOnUiThread { progressBar.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE }
+    }
+
+    private fun url(): String? {
+        val u = urlInput.text.toString().trim()
+        if (u.isEmpty()) { log("ERROR: Paste a URL first."); return null }
+        return u
+    }
+
+    // ═══ Extract ═══
+    private fun doExtract() {
+        val url = url() ?: return
         lifecycleScope.launch {
-            downloadVideo("https://www.youtube.com/shorts/abc123")
+            progress(true)
+            log("Extracting: $url")
+            val result = withContext(Dispatchers.IO) { ytdl.extract(url) }
+            result.fold(
+                onSuccess = { info ->
+                    log("TITLE: ${info.title}")
+                    log("CHANNEL: ${info.channelName}")
+                    log("DURATION: ${info.durationSeconds}s")
+                    log("VIEWS: ${info.viewCount}")
+                    log("LIVE: ${info.isLive}")
+
+                    info.bestVideo()?.let { log("BEST VIDEO: ${it.qualityLabel()} ${it.ext}") }
+                    info.bestAudio()?.let { log("BEST AUDIO: ${it.acodec} ${it.audioBitrate}kbps") }
+
+                    log("--- ${info.formats.size} formats ---")
+                    info.formats.forEach { f ->
+                        val size = if (f.fileSizeBytes != null) "${f.fileSizeBytes / 1048576}MB" else "?"
+                        log("${f.formatId} | ${f.qualityLabel().padEnd(10)} | ${f.ext} | $size")
+                    }
+                    log("DONE.")
+                },
+                onFailure = { err -> log("EXTRACT ERROR: ${err.message}") }
+            )
+            progress(false)
         }
     }
 
-    // ═══════════════════════════════════════════
-    // مثال 1: استخراج معلومات
-    // ═══════════════════════════════════════════
-    private suspend fun extractVideoInfo(url: String) {
-        val result = withContext(Dispatchers.IO) {
-            ytdl.extract(url)
-        }
-
-        result.onSuccess { info ->
-            println("═══ معلومات الفيديو ═══")
-            println("العنوان: ${info.title}")
-            println("القناة: ${info.channelName}")
-            println("المدة: ${formatDuration(info.durationSeconds)}")
-            println("المشاهدات: ${info.viewCount?.let { formatNumber(it) }}")
-            println("بث مباشر: ${info.isLive}")
-            println("")
-            println("── الـ Formats المتاحة ──")
-
-            // عرض الـ formats المدمجة
-            println("فيديو مدمج (أسهل للتشغيل):")
-            info.videoFormats().forEach { format ->
-                println("  ${format.qualityLabel()} | ${format.ext} | ${formatSize(format.fileSizeBytes)}")
-            }
-
-            // عرض الـ DASH formats
-            println("\nفيديو DASH (أعلى جودة — يحتاج دمج صوت):")
-            info.adaptiveVideoFormats().take(5).forEach { format ->
-                println("  ${format.qualityLabel()} | ${format.vcodec} | ${format.videoBitrate}kbps")
-            }
-
-            println("\nصوت:")
-            info.bestAudio()?.let { audio ->
-                println("  ${audio.acodec} | ${audio.audioBitrate}kbps")
-            }
-
-        }.onFailure { error ->
-            println("خطأ في الاستخراج: ${error.message}")
+    // ═══ Stream URL ═══
+    private fun doStream() {
+        val url = url() ?: return
+        lifecycleScope.launch {
+            progress(true)
+            log("Stream URL: $url")
+            val result = withContext(Dispatchers.IO) { ytdl.getStreamUrl(url, preferAdaptive = false) }
+            result.fold(
+                onSuccess = { s ->
+                    log("STREAM (${s.qualityLabel()}):")
+                    log(s.videoStreamUrl)
+                    s.audioStreamUrl?.let { log("AUDIO: $it") }
+                },
+                onFailure = { err -> log("STREAM ERROR: ${err.message}") }
+            )
+            progress(false)
         }
     }
 
-    // ═══════════════════════════════════════════
-    // مثال 2: Stream URL للتشغيل في ExoPlayer
-    // ═══════════════════════════════════════════
-    private suspend fun getStreamUrlForPlayer(url: String) {
-        val result = withContext(Dispatchers.IO) {
-            // preferAdaptive = false → رابط مباشر يعمل مع أي مشغل
-            // preferAdaptive = true  → DASH (يحتاج ExoPlayer)
-            ytdl.getStreamUrl(url, preferAdaptive = false)
-        }
-
-        result.onSuccess { streamInfo ->
-            println("═══ رابط الستريم ═══")
-            println("الجودة: ${streamInfo.qualityLabel()}")
-            println("URL: ${streamInfo.videoStreamUrl.take(80)}...")
-
-            // تشغيل في ExoPlayer:
-            // val mediaItem = MediaItem.fromUri(streamInfo.videoStreamUrl)
-            // exoPlayer.setMediaItem(mediaItem)
-            // exoPlayer.prepare()
-            // exoPlayer.play()
-
-        }.onFailure { error ->
-            println("خطأ: ${error.message}")
+    // ═══ Download ═══
+    private fun doDownload(dash: Boolean) {
+        val url = url() ?: return
+        lifecycleScope.launch {
+            progress(true)
+            log("Extracting for download...")
+            val result = withContext(Dispatchers.IO) { ytdl.extract(url) }
+            result.fold(
+                onSuccess = { info ->
+                    log("Downloading: ${info.title}")
+                    if (dash) downloadDash(info) else downloadBest(info)
+                },
+                onFailure = { err -> log("EXTRACT ERROR: ${err.message}"); progress(false) }
+            )
         }
     }
 
-    // ═══════════════════════════════════════════
-    // مثال 3: تحميل الفيديو
-    // ═══════════════════════════════════════════
-    private suspend fun downloadVideo(url: String) {
-        // استخراج المعلومات أولاً
-        val info = withContext(Dispatchers.IO) {
-            ytdl.extract(url)
-        }.getOrElse {
-            Toast.makeText(this, "فشل الاستخراج: ${it.message}", Toast.LENGTH_LONG).show()
-            return
-        }
+    private suspend fun downloadBest(info: VideoInfo) {
+        val format = info.bestVideo() ?: run { log("ERROR: No combined format."); progress(false); return }
+        val file = outputFile("${sanitize(info.title)}.${format.ext}")
+        log("Saving: ${file.name}")
 
-        // مجلد التحميل
-        val downloadDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES)
-            ?: filesDir
-
-        println("═══ بدء التحميل ═══")
-        println("الفيديو: ${info.title}")
-
-        // تحميل أفضل جودة مدمجة
         withContext(Dispatchers.IO) {
-            ytdl.download(info, downloadDir, resume = true)
-        }.collect { result ->
-            when (result) {
+            ytdl.downloadFormat(format, file, resume = true)
+        }.collect { r ->
+            when (r) {
                 is DownloadResult.Progress -> {
-                    val mb = result.downloadedBytes / 1024 / 1024
-                    val totalMb = if (result.totalBytes > 0) result.totalBytes / 1024 / 1024 else -1
-                    val speed = result.speedBps / 1024  // KB/s
-
-                    println(buildString {
-                        append("تحميل: ${result.percentage.toInt()}%")
-                        append(" | ${mb}MB")
-                        if (totalMb > 0) append("/${totalMb}MB")
-                        append(" | ${speed}KB/s")
-                    })
+                    val mb = r.downloadedBytes / 1048576
+                    val total = if (r.totalBytes > 0) "/${r.totalBytes / 1048576}MB" else ""
+                    log("DL ${r.percentage.toInt()}% ${mb}MB$total ${r.speedBps / 1048576}MB/s")
                 }
-
                 is DownloadResult.Success -> {
-                    println("✓ اكتمل التحميل: ${result.filePath}")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "تم التحميل!", Toast.LENGTH_SHORT).show()
-                    }
+                    log("COMPLETE: ${r.filePath}")
+                    progress(false)
                 }
-
                 is DownloadResult.Error -> {
-                    println("✗ خطأ: ${result.message}")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "خطأ: ${result.message}", Toast.LENGTH_LONG).show()
-                    }
+                    log("DOWNLOAD ERROR: ${r.message}")
+                    progress(false)
                 }
             }
         }
     }
 
-    // ═══════════════════════════════════════════
-    // دوال مساعدة للعرض
-    // ═══════════════════════════════════════════
+    private suspend fun downloadDash(info: VideoInfo) {
+        val pair = ytdl.downloadDash(info, cacheDir) ?: run {
+            log("ERROR: No DASH formats available.")
+            progress(false); return
+        }
+        var vDone = false; var aDone = false
 
-    private fun formatDuration(seconds: Long): String {
-        val h = seconds / 3600
-        val m = (seconds % 3600) / 60
-        val s = seconds % 60
-        return if (h > 0) "%d:%02d:%02d".format(h, m, s)
-        else "%d:%02d".format(m, s)
-    }
-
-    private fun formatNumber(n: Long): String = when {
-        n >= 1_000_000_000 -> "%.1fب".format(n / 1_000_000_000.0)
-        n >= 1_000_000 -> "%.1fم".format(n / 1_000_000.0)
-        n >= 1_000 -> "%.1fك".format(n / 1_000.0)
-        else -> n.toString()
-    }
-
-    private fun formatSize(bytes: Long?): String {
-        if (bytes == null || bytes <= 0) return "غير معروف"
-        return when {
-            bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-            bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
-            bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
-            else -> "$bytes B"
+        lifecycleScope.launch {
+            pair.first.collect { r ->
+                when (r) {
+                    is DownloadResult.Progress -> log("VIDEO ${r.percentage.toInt()}% ${r.downloadedBytes / 1048576}MB")
+                    is DownloadResult.Success -> { vDone = true; log("VIDEO DONE"); if (vDone && aDone) { progress(false); log("DASH complete. Use ffmpeg to merge.") } }
+                    is DownloadResult.Error -> { log("VIDEO ERROR: ${r.message}"); progress(false) }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            pair.second.collect { r ->
+                when (r) {
+                    is DownloadResult.Progress -> log("AUDIO ${r.percentage.toInt()}% ${r.downloadedBytes / 1048576}MB")
+                    is DownloadResult.Success -> { aDone = true; log("AUDIO DONE"); if (vDone && aDone) { progress(false); log("DASH complete. Use ffmpeg to merge.") } }
+                    is DownloadResult.Error -> { log("AUDIO ERROR: ${r.message}") }
+                }
+            }
         }
     }
+
+    // ═══ Storage (all API levels) ═══
+    private fun outputFile(name: String): File {
+        return if (Build.VERSION.SDK_INT >= 29) {
+            // API 29+: app-specific dir (no permissions needed)
+            val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+            dir.mkdirs()
+            File(dir, name)
+        } else {
+            // API < 29: Downloads public folder with WRITE_EXTERNAL_STORAGE
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            dir.mkdirs()
+            File(dir, name)
+        }
+    }
+
+    private fun sanitize(s: String) = s.replace(Regex("""[/\\:*?"<>|]"""), "_").take(180)
 }

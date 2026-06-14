@@ -31,7 +31,9 @@ jobs:
       run: gradle :library:test
 
     - name: Build with Gradle
-      run: gradle :library:assembleRelease
+      run: |
+        gradle :library:assembleRelease
+        gradle :sample:assembleDebug
 
     - name: Create Release
       if: github.ref == 'refs/heads/main' && success()
@@ -59,7 +61,7 @@ jobs:
           exit 1
         fi
 
-        for FILE in library/build/outputs/aar/library-release.aar library/build/libs/*.jar; do
+        for FILE in library/build/outputs/aar/library-release.aar library/build/libs/*.jar sample/build/outputs/apk/debug/*.apk; do
           [ -f "$FILE" ] || continue
           NAME=$(basename "$FILE")
           UPLOAD_TARGET="${UPLOAD_URL%\{*\}}?name=$NAME"
