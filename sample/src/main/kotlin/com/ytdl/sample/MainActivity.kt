@@ -3,7 +3,6 @@ package com.ytdl.sample
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.widget.*
@@ -221,19 +220,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ═══ Storage (all API levels) ═══
+    // ═══ Storage (all API levels, no permissions needed) ═══
     private fun outputFile(name: String): File {
-        return if (Build.VERSION.SDK_INT >= 29) {
-            // API 29+: app-specific dir (no permissions needed)
-            val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
-            dir.mkdirs()
-            File(dir, name)
-        } else {
-            // API < 29: Downloads public folder with WRITE_EXTERNAL_STORAGE
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            dir.mkdirs()
-            File(dir, name)
-        }
+        val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+        dir.mkdirs()
+        return File(dir, name)
     }
 
     private fun sanitize(s: String) = s.replace(Regex("""[/\\:*?"<>|]"""), "_").take(180)

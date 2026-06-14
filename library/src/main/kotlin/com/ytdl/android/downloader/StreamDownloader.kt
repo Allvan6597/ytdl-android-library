@@ -147,7 +147,7 @@ class StreamDownloader(
             emit(DownloadResult.Success(destFile.absolutePath))
 
         } catch (e: Exception) {
-            emit(DownloadResult.Error("خطأ في التحميل: ${e.message}", e))
+            emit(DownloadResult.Error("خطأ في التحميل: ${e::class.simpleName}: ${e.message}", e))
         }
     }
 
