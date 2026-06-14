@@ -20,7 +20,7 @@ class YTDLTest {
         val url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         val result = withContext(Dispatchers.IO) { ytdl.extract(url) }
 
-        assertTrue("extract should succeed: ${result.exceptionOrNull()?.message}", result.isSuccess)
+        assertTrue(result.isSuccess) { "extract should succeed: ${result.exceptionOrNull()?.message}" }
 
         val info = result.getOrThrow()
         println("Title: ${info.title}")
@@ -30,12 +30,12 @@ class YTDLTest {
         println("Is live: ${info.isLive}")
         println("Number of formats: ${info.formats.size}")
 
-        assertNotNull("title should not be null", info.title)
-        assertTrue("title should not be empty", info.title!!.isNotBlank())
-        assertTrue("should have at least one format", info.formats.isNotEmpty())
+        assertNotNull(info.title) { "title should not be null" }
+        assertFalse(info.title!!.isBlank()) { "title should not be empty" }
+        assertTrue(info.formats.isNotEmpty()) { "should have at least one format" }
 
         val best = info.bestVideo()
-        assertNotNull("bestVideo should not be null", best)
+        assertNotNull(best) { "bestVideo should not be null" }
         println("Best video: ${best?.qualityLabel()} (${best?.ext}, ${best?.fileSizeBytes} bytes)")
 
         println("--- All formats ---")
@@ -49,10 +49,10 @@ class YTDLTest {
         val url = "https://youtu.be/dQw4w9WgXcQ"
         val result = withContext(Dispatchers.IO) { ytdl.getFormats(url) }
 
-        assertTrue("getFormats should succeed: ${result.exceptionOrNull()?.message}", result.isSuccess)
+        assertTrue(result.isSuccess) { "getFormats should succeed: ${result.exceptionOrNull()?.message}" }
 
         val formats = result.getOrThrow()
-        assertTrue("should have formats", formats.isNotEmpty())
+        assertTrue(formats.isNotEmpty()) { "should have formats" }
         println("Formats count: ${formats.size}")
     }
 
@@ -61,11 +61,11 @@ class YTDLTest {
         val url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         val result = withContext(Dispatchers.IO) { ytdl.getStreamUrl(url, preferAdaptive = false) }
 
-        assertTrue("getStreamUrl should succeed: ${result.exceptionOrNull()?.message}", result.isSuccess)
+        assertTrue(result.isSuccess) { "getStreamUrl should succeed: ${result.exceptionOrNull()?.message}" }
 
         val streamInfo = result.getOrThrow()
-        assertNotNull("videoStreamUrl should not be null", streamInfo.videoStreamUrl)
-        assertTrue("videoStreamUrl should start with http", streamInfo.videoStreamUrl.startsWith("http"))
+        assertNotNull(streamInfo.videoStreamUrl) { "videoStreamUrl should not be null" }
+        assertTrue(streamInfo.videoStreamUrl.startsWith("http")) { "videoStreamUrl should start with http" }
         println("Stream URL: ${streamInfo.videoStreamUrl.take(100)}...")
         println("Quality: ${streamInfo.qualityLabel()}")
         println("Adaptive: ${streamInfo.isAdaptive}")
@@ -74,7 +74,7 @@ class YTDLTest {
     @Test
     fun `extract with invalid URL should fail`() = runTest {
         val result = withContext(Dispatchers.IO) { ytdl.extract("not-a-valid-url") }
-        assertTrue("invalid URL should fail", result.isFailure)
+        assertTrue(result.isFailure) { "invalid URL should fail" }
     }
 
     @Test
