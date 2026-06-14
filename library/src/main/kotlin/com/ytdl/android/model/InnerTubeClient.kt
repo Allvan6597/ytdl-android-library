@@ -32,14 +32,14 @@ enum class InnerTubeClient(
      */
     ANDROID(
         clientName = "ANDROID",
-        clientVersion = "19.44.38",
+        clientVersion = "21.02.35",
         androidSdkVersion = 30,
         osVersion = "11",
         platform = "MOBILE",
-        userAgent = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
+        userAgent = "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip",
         requiresSigCipher = false,
         requiresPoToken = false,
-        apiKey = null  // yt-dlp 2026: لم تعد API key مطلوبة
+        apiKey = null
     ),
 
     /**
@@ -47,11 +47,11 @@ enum class InnerTubeClient(
      */
     ANDROID_EMBEDDED(
         clientName = "ANDROID_EMBEDDED_PLAYER",
-        clientVersion = "19.44.38",
+        clientVersion = "21.02.35",
         androidSdkVersion = 30,
         osVersion = "11",
         platform = "MOBILE",
-        userAgent = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
+        userAgent = "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip",
         requiresSigCipher = false,
         requiresPoToken = false,
         apiKey = null
@@ -62,11 +62,11 @@ enum class InnerTubeClient(
      */
     IOS(
         clientName = "IOS",
-        clientVersion = "19.45.4",
+        clientVersion = "21.02.3",
         androidSdkVersion = null,
-        osVersion = "17.7.2",
+        osVersion = "18.3.2.22D82",
         platform = "MOBILE",
-        userAgent = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 17_7_2 like Mac OS X)",
+        userAgent = "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
         requiresSigCipher = false,
         requiresPoToken = false,
         apiKey = null
@@ -93,7 +93,7 @@ enum class InnerTubeClient(
      */
     WEB(
         clientName = "WEB",
-        clientVersion = "2.20241126.01.00",
+        clientVersion = "2.20260114.08.00",
         androidSdkVersion = null,
         osVersion = null,
         platform = "DESKTOP",
