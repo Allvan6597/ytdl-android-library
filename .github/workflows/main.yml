@@ -27,6 +27,9 @@ jobs:
       with:
         gradle-version: "8.10.2"
 
+    - name: Run tests
+      run: gradle :library:test
+
     - name: Build with Gradle
       run: gradle :library:assembleRelease
 
