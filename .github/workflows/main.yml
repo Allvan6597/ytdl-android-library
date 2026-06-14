@@ -6,45 +6,71 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build and Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: "8.7"
 
-      - name: Build with Gradle
-        run: ./gradlew :library:assembleRelease
+    - name: Build with Gradle
+      run: gradle :library:assembleRelease
 
-      - name: Create Sources Jar
-        run: ./gradlew :library:sourcesJar
-        continue-on-error: true
+    - name: Create Sources Jar
+      run: gradle :library:sourcesJar
+      continue-on-error: true
 
-      - name: Upload AAR to Release
-        if: github.ref == 'refs/heads/main' && success()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "v1.0.0-${{ github.run_number }}"
-          name: "Build v1.0.0-${{ github.run_number }}"
-          body: "Auto-built from commit ${{ github.sha }}"
-          files: |
-            library/build/outputs/aar/library-release.aar
-            library/build/libs/*.jar
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create Release
+      if: github.ref == 'refs/heads/main' && success()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG="v1.0.0-$(date +'%Y%m%d%H%M')"
+        echo "Creating release: $TAG"
+
+        RESPONSE=$(curl -s -X POST \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/releases" \
+          -d "{
+            \"tag_name\": \"$TAG\",
+            \"name\": \"Build $TAG\",
+            \"body\": \"Auto-built from commit ${{ github.sha }}\"
+          }")
+        
+        UPLOAD_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('upload_url',''))" 2>/dev/null)
+
+        if [ -z "$UPLOAD_URL" ]; then
+          echo "Release creation failed:"
+          echo "$RESPONSE" | head -5
+          exit 1
+        fi
+
+        for FILE in library/build/outputs/aar/library-release.aar library/build/libs/*.jar; do
+          [ -f "$FILE" ] || continue
+          NAME=$(basename "$FILE")
+          UPLOAD_TARGET="${UPLOAD_URL%\{*\}}?name=$NAME"
+          echo "Uploading $NAME..."
+          curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$FILE" \
+            "$UPLOAD_TARGET" > /dev/null
+          echo "Uploaded $NAME"
+        done
+
+        echo "Release: https://github.com/${{ github.repository }}/releases/tag/$TAG"
