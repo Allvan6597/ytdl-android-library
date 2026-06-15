@@ -95,13 +95,15 @@ internal class InnerTubeService(private val config: YTDLConfig) {
             put("videoId", videoId)
             put("context", contextObj)
 
-            // playbackContext — لتحسين جودة الستريم
-            put("playbackContext", buildJsonObject {
-                put("contentPlaybackContext", buildJsonObject {
-                    put("html5Preference", "HTML5_PREF_WANTS")
-                    put("signatureTimestamp", getSignatureTimestamp())
+            // playbackContext — فقط للـ WEB client (yt-dlp لا يرسله للموبايل)
+            if (client.requiresSigCipher) {
+                put("playbackContext", buildJsonObject {
+                    put("contentPlaybackContext", buildJsonObject {
+                        put("html5Preference", "HTML5_PREF_WANTS")
+                        put("signatureTimestamp", getSignatureTimestamp())
+                    })
                 })
-            })
+            }
 
             // contentCheckOk — لتجاوز بعض قيود المحتوى
             put("contentCheckOk", true)

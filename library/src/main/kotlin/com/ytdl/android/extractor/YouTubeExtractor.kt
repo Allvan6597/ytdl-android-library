@@ -63,12 +63,7 @@ internal class YouTubeExtractor(private val service: InnerTubeService) {
         val status = playabilityStatus?.get("status")?.jsonPrimitive?.content
 
         if (status != "OK") {
-            val reason = playabilityStatus?.get("reason")?.jsonPrimitive?.content
-            // بعض الأسباب تستحق المحاولة بعميل آخر
-            if (status == "UNPLAYABLE" || status == "LOGIN_REQUIRED") {
-                return null  // جرب العميل التالي
-            }
-            throw Exception("الفيديو غير متاح: $reason")
+            return null  // أي فشل = جرب العميل التالي في السلسلة
         }
 
         // ---- 2. استخراج videoDetails ----

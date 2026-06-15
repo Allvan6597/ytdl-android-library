@@ -27,8 +27,8 @@ enum class InnerTubeClient(
     /**
      * ANDROID client — الأفضل لـ Android:
      * - لا يحتاج فك تشفير signature cipher
-     * - لا يحتاج PO Token في معظم الحالات
      * - يعطي stream URLs مباشرة صالحة
+     * - YouTube بدأ يطلبه PO Token لبعض الـ streams
      */
     ANDROID(
         clientName = "ANDROID",
