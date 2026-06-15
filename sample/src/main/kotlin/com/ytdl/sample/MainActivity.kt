@@ -21,7 +21,7 @@ import java.util.*
 class MainActivity : AppCompatActivity() {
 
     private val ytdl = YTDL.Builder()
-        .preferClient(InnerTubeClient.ANDROID)
+        .preferClient(InnerTubeClient.TV)
         .enableLogging(true)
         .timeouts(connectSec = 30L, readSec = 60L)
         .build()

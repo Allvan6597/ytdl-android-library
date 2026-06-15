@@ -7,7 +7,25 @@ import com.ytdl.android.utils.NParameterUtils
 import kotlinx.serialization.json.*
 
 /**
- * YouTube Stream Extractor
+ * YouTube Stream Extractor — مُصلَح 2026.06
+ *
+ * الإصلاحات:
+ *
+ * 1. TV client: يُرجع "LOGIN_REQUIRED" أحياناً حتى للفيديوهات العامة
+ *    (في الإصدار القديم كان يكسر الـ fallback chain)
+ *    الحل: تجاهل LOGIN_REQUIRED فقط إذا كان العميل غير TV_EMBEDDED
+ *    وإعادة المحاولة مع TV_EMBEDDED
+ *
+ * 2. SABR Detection: إذا كانت formats موجودة لكن جميعها بدون URL
+ *    (YouTube يُرجع SABR formats مع URLs فارغة)
+ *    الحل: تخطي هذا العميل بدلاً من الفشل الصامت
+ *
+ * 3. شرط الفشل: كان "This video is unavailable" يوقف الـ chain كلها
+ *    بعض العملاء تُرجع هذا لكن عميل آخر ينجح (حجب جغرافي)
+ *    الحل: وقف الـ chain فقط عند "Private video" أو "removed"
+ *
+ * 4. extractUrlFromCipher: كان يُضيف sig مباشرة بدون URL encoding
+ *    بعض signatures تحتوي على أحرف خاصة تحتاج encoding
  */
 internal class YouTubeExtractor(
     private val service: InnerTubeService,
@@ -29,18 +47,22 @@ internal class YouTubeExtractor(
                     return Result.success(result)
                 }
                 errors.add("${client.clientName}: no streamingData (PO Token gating or unavailable)")
+            } catch (e: SabrOnlyException) {
+                // إصلاح #2: SABR client — تخطى بصمت، جرّب التالي
+                errors.add("${client.clientName}: SABR-only (no direct URLs)")
+                if (enableLogging) Log.w(TAG, "${client.clientName}: SABR-only formats detected, skipping")
             } catch (e: Exception) {
                 val msg = e.message ?: "unknown error"
                 errors.add("${client.clientName}: $msg")
-                // لا توقف الـ fallback — بعض العملاء يُرجع UNPLAYABLE/ERROR
-                // بينما عميل آخر قد ينجح (حجب جغرافي، قيود عمر، إلخ)
-                // استثناء وحيد: إذا كان الخطأ "video deleted" أو "private" الصريح
-                if (msg.contains("This video is unavailable") ||
-                    msg.contains("Private video") ||
-                    msg.contains("This video has been removed")) {
-                    break
+
+                // إصلاح #3: وقف الـ chain فقط عند "Private video" أو "removed"
+                // "video unavailable" قد يكون حجب جغرافي فقط — عميل آخر قد ينجح
+                if (msg.contains("Private video", ignoreCase = true) ||
+                    msg.contains("This video has been removed", ignoreCase = true) ||
+                    msg.contains("video deleted", ignoreCase = true)) {
+                    break  // فيديو محذوف أو خاص — لا جدوى من المحاولة
                 }
-                // continue إلى العميل التالي في جميع الحالات الأخرى
+                // في جميع الحالات الأخرى: استمر إلى العميل التالي
             }
         }
 
@@ -66,9 +88,20 @@ internal class YouTubeExtractor(
         when (status) {
             "OK"  -> { /* proceed */ }
             "LOGIN_REQUIRED" -> {
-                if (client != InnerTubeClient.TV_EMBEDDED) return null
+                // إصلاح #1: TV_EMBEDDED فقط يمكنه تجاوز age-gating
+                // TV (العادي) قد يُرجع LOGIN_REQUIRED خطأً أحياناً → جرّب عميل آخر
+                if (client == InnerTubeClient.TV_EMBEDDED) {
+                    // TV_EMBEDDED مع LOGIN_REQUIRED → محتوى محمي ولا يمكن تجاوزه بدون تسجيل دخول
+                    throw Exception("المحتوى يتطلب تسجيل دخول: ${reason ?: "LOGIN_REQUIRED"}")
+                }
+                // بقية العملاء → جرّب التالي في الـ chain
+                return null
             }
-            "AGE_VERIFICATION_REQUIRED", "AGE_CHECK_REQUIRED" -> return null
+            "AGE_VERIFICATION_REQUIRED", "AGE_CHECK_REQUIRED" -> {
+                // هذه الحالة يتجاوزها TV_EMBEDDED — إذا وصلنا هنا من عميل آخر فجرّب التالي
+                if (enableLogging) Log.d(TAG, "${client.clientName}: age restriction, next client may bypass")
+                return null
+            }
             "UNPLAYABLE" -> throw Exception("الفيديو غير متاح: ${reason ?: "UNPLAYABLE"}")
             "ERROR"      -> throw Exception("خطأ YouTube: ${reason ?: "ERROR"}")
             null         -> return null
@@ -84,10 +117,10 @@ internal class YouTubeExtractor(
             return null
         }
 
-        // ---- streamingData — المشكلة الأساسية ----
+        // ---- streamingData ----
         val streamingData = playerResponse["streamingData"]?.jsonObject ?: run {
             if (enableLogging) Log.w(TAG,
-                "${client.clientName}: playabilityStatus=OK but streamingData ABSENT — PO Token gating active")
+                "${client.clientName}: playabilityStatus=OK but streamingData ABSENT — PO Token gating")
             return null
         }
 
@@ -104,12 +137,24 @@ internal class YouTubeExtractor(
             runCatching { parseFormat(it.jsonObject, isAdaptive = true) }.getOrNull()
         }
 
+        // إصلاح #2: SABR detection
+        // إذا كانت streamingData موجودة لكن جميع formats بدون URL
+        // هذا يعني YouTube يُرجع SABR formats (لا تعمل مع تنزيل مباشر)
         if (formats.isEmpty()) {
-            if (enableLogging) Log.w(TAG, "${client.clientName}: streamingData present but all formats failed to parse")
+            val totalFormatCount = muxedFormats.size + adaptiveFormats.size
+            if (totalFormatCount > 0) {
+                // كانت هناك formats لكن جميعها فشلت في الـ parse (SABR أو encrypted)
+                if (enableLogging) Log.w(TAG,
+                    "${client.clientName}: $totalFormatCount formats found but all lack direct URLs (SABR?)")
+                throw SabrOnlyException("${client.clientName}: $totalFormatCount SABR/encrypted formats, no direct URLs")
+            }
+            if (enableLogging) Log.w(TAG, "${client.clientName}: streamingData present but formats array empty")
             return null
         }
 
         // ---- build VideoInfo ----
+        if (enableLogging) Log.d(TAG, "${client.clientName}: extracted ${formats.size} usable formats")
+
         return VideoInfo(
             id              = videoId,
             title           = videoDetails["title"]?.jsonPrimitive?.content ?: "بدون عنوان",
@@ -131,9 +176,13 @@ internal class YouTubeExtractor(
             ?: obj["cipher"]?.jsonPrimitive?.content
 
         val url = when {
-            directUrl != null       -> applyNParam(directUrl)
+            directUrl != null -> {
+                // تحقق أن الـ URL صالح وليس SABR placeholder
+                if (directUrl.isBlank() || directUrl.startsWith("sabr://")) return null
+                applyNParam(directUrl)
+            }
             signatureCipher != null -> extractUrlFromCipher(signatureCipher)
-            else                    -> return null
+            else -> return null  // لا URL ولا cipher → SABR format
         } ?: return null
 
         val mimeType = obj["mimeType"]?.jsonPrimitive?.content ?: return null
@@ -143,10 +192,9 @@ internal class YouTubeExtractor(
         val hasVideo = vcodec != null && vcodec != "none"
         val hasAudio = acodec != null && acodec != "none"
 
-        val totalBitrateBps = obj["bitrate"]?.jsonPrimitive?.intOrNull
+        val totalBitrateBps  = obj["bitrate"]?.jsonPrimitive?.intOrNull
         val totalBitrateKbps = totalBitrateBps?.div(1000)
 
-        // audioBitrate: averageBitrate لملفات الصوت
         val audioBitrate = if (!hasVideo || hasAudio) {
             obj["averageBitrate"]?.jsonPrimitive?.intOrNull?.div(1000)
                 ?: totalBitrateKbps
@@ -177,21 +225,45 @@ internal class YouTubeExtractor(
     }
 
     private fun applyNParam(url: String): String {
+        // N-parameter transform — TV و ANDROID_VR لا يحتاجانه
+        // yt-dlp ينفذه عبر JavaScript (QuickJS/deno/node)
+        // بدون تحويل nsig: السرعة محدودة إلى ~50kbps من YouTube
+        // TV client يُرجع URLs بدون قيود nsig في الغالب
         if (!NParameterUtils.hasNParam(url)) return url
-        return url
+        return url  // إرجاع URL كما هو — nsig transform يتطلب JS engine
     }
 
+    /**
+     * إصلاح #4: extractUrlFromCipher مع URL encoding صحيح للـ signature
+     *
+     * YouTube يُرجع signature محتوية على أحرف مثل = و + و /
+     * يجب re-encoding هذه الأحرف قبل إضافتها إلى URL
+     */
     private fun extractUrlFromCipher(cipher: String): String? {
         val params = cipher.split("&").associate { part ->
             val eq = part.indexOf('=')
             if (eq == -1) part to ""
             else part.substring(0, eq) to
-                    runCatching { java.net.URLDecoder.decode(part.substring(eq + 1), "UTF-8") }
-                        .getOrDefault(part.substring(eq + 1))
+                    runCatching {
+                        java.net.URLDecoder.decode(part.substring(eq + 1), "UTF-8")
+                    }.getOrDefault(part.substring(eq + 1))
         }
+
         val url = params["url"] ?: return null
-        val sig = params["s"]   ?: return url
-        return "$url&sig=$sig"
+        val sig = params["s"]   ?: return url  // بعض العملاء تُرجع URL مباشر
+
+        // إصلاح #4: re-encode الـ signature لأنها قد تحتوي أحرف خاصة
+        val encodedSig = try {
+            java.net.URLEncoder.encode(sig, "UTF-8")
+                .replace("+", "%20")  // URL encoding standards: spaces as %20
+        } catch (e: Exception) {
+            sig  // fallback للـ raw value
+        }
+
+        // TV_EMBEDDED يستخدم sp parameter لاسم الـ signature parameter
+        val sigParamName = params["sp"] ?: "sig"
+
+        return "$url&$sigParamName=$encodedSig"
     }
 
     private fun parseMimeType(mimeType: String): Triple<String, String?, String?> {
@@ -204,7 +276,6 @@ internal class YouTubeExtractor(
             else                  -> "mp4"
         }
 
-        // دعم كل أشكال codecs: مع/بدون quotes
         val codecsStr = Regex("""codecs=["']?([^"';,\s][^"';]*)["']?""")
             .find(mimeType)?.groupValues?.get(1)
 
@@ -225,7 +296,7 @@ internal class YouTubeExtractor(
         val acodec: String? = when {
             isAudio                     -> codecs.firstOrNull()
             isVideo && codecs.size >= 2 -> codecs[1]
-            isVideo                     -> null   // فيديو فقط بدون صوت (DASH)
+            isVideo                     -> null
             else                        -> null
         }
 
@@ -261,6 +332,9 @@ internal class YouTubeExtractor(
         chain += InnerTubeClient.FALLBACK_CHAIN.filter { it != preferred }
         return chain
     }
+
+    /** استثناء خاص لـ SABR-only formats — يُميّزها عن الأخطاء الحقيقية */
+    private class SabrOnlyException(message: String) : Exception(message)
 
     companion object {
         private const val TAG = "YTDLAndroid"

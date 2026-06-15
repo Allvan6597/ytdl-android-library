@@ -2,7 +2,27 @@ package com.ytdl.android.model
 
 /**
  * InnerTube Client Configurations
- * مرجع: yt-dlp INNERTUBE_CLIENTS — 2026.06.09
+ *
+ * الوضع الحالي في يونيو 2026:
+ *
+ * ❌ ANDROID_TESTSUITE (1.9) — مات. YouTube بدأ يُطبّق PO Token gating عليه
+ *    منذ مايو 2026 — هذا هو سبب خطأ "no streamingData" الذي تراه
+ *
+ * ✅ TV (TVHTML5) — الأقوى حالياً. لا يحتاج PO Token ولا signatureCipher
+ *    yt-dlp يستخدمه كأول اختيار في 2026.06.x
+ *    client ID: 7، version: 2.0
+ *
+ * ✅ ANDROID_VR — لا يزال يعمل للفيديوهات العادية
+ *    تم تخفيض إصدار User-Agent في yt-dlp 2026.03.10 لتجنب مشكلة 360p
+ *
+ * ✅ IOS — يعمل مع PO Token، بدونه قد يُرجع 403 على بعض الفيديوهات
+ *    xt-dlp الافتراضي الحالي: tv,ios,web
+ *
+ * ✅ MWEB — موبايل ويب، يعمل مع PO Token
+ *
+ * ❌ WEB — SABR-only في معظم الحالات، يُعيد URLs فارغة
+ *
+ * مرجع: yt-dlp 2026.06.09، issues #15712، #15780، #16150
  */
 enum class InnerTubeClient(
     val clientName: String,
@@ -14,33 +34,75 @@ enum class InnerTubeClient(
     val requiresSigCipher: Boolean,
     val requiresPoToken: Boolean,
     val apiKey: String?,
-    /** إذا كان true: لا تُرسل أي context fields إضافية */
     val isMinimalContext: Boolean = false
 ) {
 
     /**
-     * ANDROID_TESTSUITE — الأول في 2026
+     * TV (TVHTML5) — الأقوى في 2026.06
      *
-     * السبب: YouTube لا يُطبّق PO Token gating على هذا العميل
-     * Context بسيط جداً — بدون osName/deviceMake/androidSdkVersion
-     * مرجع yt-dlp: client ID 30, INNERTUBE_CLIENTS['ANDROID_TESTSUITE']
+     * لماذا ينجح:
+     * - YouTube يعامله كـ Smart TV app → لا botGuard ولا PO Token
+     * - يُعطي direct URLs مباشرة بدون signatureCipher
+     * - yt-dlp يستخدمه كأول عميل في default chain منذ 2026.03
+     *
+     * yt-dlp client ID: 7
      */
-    ANDROID_TESTSUITE(
-        clientName        = "ANDROID_TESTSUITE",
-        clientVersion     = "1.9",
-        androidSdkVersion = null,   // مهم: لا ترسل هذا
+    TV(
+        clientName        = "TVHTML5",
+        clientVersion     = "2.0",
+        androidSdkVersion = null,
         osVersion         = null,
-        platform          = "MOBILE",
-        userAgent         = "com.google.android.youtube/1.9 (Linux; U; Android 6.0; Nexus 5 Build/MRA58N) gzip",
-        requiresSigCipher = false,
+        platform          = "TV",
+        userAgent         = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1",
+        requiresSigCipher = false,   // TV client يُرجع direct URLs
         requiresPoToken   = false,
-        apiKey            = null,
-        isMinimalContext  = true    // context بسيط فقط clientName+clientVersion
+        apiKey            = null
     ),
 
     /**
-     * ANDROID — fallback موثوق
-     * version 19.44.38 per yt-dlp 2026.06.09
+     * ANDROID_VR — موثوق للفيديوهات العادية
+     *
+     * تم تخفيض إصدار User-Agent في yt-dlp 2026.03.10 من 1.60.19 إلى 1.56.21
+     * لتجنب مشكلة إرجاع 360p فقط (issue #16150)
+     *
+     * yt-dlp client ID: 28
+     */
+    ANDROID_VR(
+        clientName        = "ANDROID_VR",
+        clientVersion     = "1.56.21",   // مخفّض من 1.60.19 — fix yt-dlp #16150
+        androidSdkVersion = 29,           // Android 10 بدلاً من 11
+        osVersion         = "10",
+        platform          = "MOBILE",
+        userAgent         = "com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 10; Build/QQ3A.200805.001) gzip",
+        requiresSigCipher = false,
+        requiresPoToken   = false,
+        apiKey            = null
+    ),
+
+    /**
+     * IOS — يعمل بشكل جيد في معظم الحالات
+     *
+     * version محدثة لـ 2026.06.09 من yt-dlp
+     * yt-dlp client ID: 5
+     */
+    IOS(
+        clientName        = "IOS",
+        clientVersion     = "19.45.4",
+        androidSdkVersion = null,
+        osVersion         = "17.7.2.21H221",
+        platform          = "MOBILE",
+        userAgent         = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 17_7_2 like Mac OS X)",
+        requiresSigCipher = false,
+        requiresPoToken   = false,   // بدون cookies يعمل في الغالب
+        apiKey            = null
+    ),
+
+    /**
+     * ANDROID — fallback
+     *
+     * version محدثة 2026.06.09
+     * قد يُرجع SABR formats أحياناً لكن لا يزال يعمل
+     * yt-dlp client ID: 3
      */
     ANDROID(
         clientName        = "ANDROID",
@@ -55,54 +117,30 @@ enum class InnerTubeClient(
     ),
 
     /**
-     * ANDROID_VR — bypass client مثبت في yt-dlp 2026
-     * client ID: 28
+     * ANDROID_TESTSUITE — ميت في 2026.06
+     *
+     * كان يعمل حتى مايو 2026، لكن YouTube أضاف PO Token gating عليه.
+     * المبقية هنا فقط كـ last-resort — قد يعود للعمل مستقبلاً.
+     * yt-dlp client ID: 30
      */
-    ANDROID_VR(
-        clientName        = "ANDROID_VR",
-        clientVersion     = "1.60.19",
-        androidSdkVersion = 30,
-        osVersion         = "11",
-        platform          = "MOBILE",
-        userAgent         = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 11) gzip",
-        requiresSigCipher = false,
-        requiresPoToken   = false,
-        apiKey            = null
-    ),
-
-    /**
-     * IOS — بديل جيد
-     * version 19.45.4 per yt-dlp 2026.06.09
-     */
-    IOS(
-        clientName        = "IOS",
-        clientVersion     = "19.45.4",
+    ANDROID_TESTSUITE(
+        clientName        = "ANDROID_TESTSUITE",
+        clientVersion     = "1.9",
         androidSdkVersion = null,
-        osVersion         = "17.7.2.21H221",
+        osVersion         = null,
         platform          = "MOBILE",
-        userAgent         = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 17_7_2 like Mac OS X)",
+        userAgent         = "com.google.android.youtube/1.9 (Linux; U; Android 6.0; Nexus 5 Build/MRA58N) gzip",
         requiresSigCipher = false,
         requiresPoToken   = false,
-        apiKey            = null
+        apiKey            = null,
+        isMinimalContext  = true
     ),
 
     /**
-     * ANDROID_EMBEDDED — للمحتوى المقيد
-     */
-    ANDROID_EMBEDDED(
-        clientName        = "ANDROID_EMBEDDED_PLAYER",
-        clientVersion     = "19.44.38",
-        androidSdkVersion = 30,
-        osVersion         = "11",
-        platform          = "MOBILE",
-        userAgent         = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
-        requiresSigCipher = false,
-        requiresPoToken   = false,
-        apiKey            = null
-    ),
-
-    /**
-     * TV_EMBEDDED — للمحتوى المقيد بالعمر
+     * TV_EMBEDDED — للمحتوى المقيد بالعمر (age-gated bypass)
+     *
+     * يحتاج signatureCipher ولكنه يتجاوز قيود العمر
+     * yt-dlp client ID: 85
      */
     TV_EMBEDDED(
         clientName        = "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
@@ -117,9 +155,11 @@ enum class InnerTubeClient(
     ),
 
     /**
-     * WEB — آخر fallback للمحتوى المحجوب جغرافياً
-     * يُرجع streamingData أحياناً عندما تفشل كل العملاء الأخرى
-     * مرجع yt-dlp: client ID 1
+     * WEB — last resort فقط
+     *
+     * معظم formats تُرجع SABR (بدون URL مباشر) في 2026.
+     * نُضيفه كـ fallback أخير لكنه نادراً ما ينجح بدون PO Token.
+     * yt-dlp client ID: 1
      */
     WEB(
         clientName        = "WEB",
@@ -129,24 +169,30 @@ enum class InnerTubeClient(
         platform          = "DESKTOP",
         userAgent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         requiresSigCipher = true,
-        requiresPoToken   = true,   // WEB يحتاج PO Token في الغالب — لكن نجرّبه كـ last resort
+        requiresPoToken   = true,
         apiKey            = null
     );
 
     companion object {
         /**
-         * Fallback chain 2026:
-         * ANDROID_TESTSUITE أولاً — يتجاوز PO Token gating
-         * WEB أخيراً — last resort للمحتوى المحجوب جغرافياً
+         * Fallback chain — يونيو 2026
+         *
+         * الترتيب مبني على yt-dlp 2026.06.x default chain:
+         *   tv, ios, web (الافتراضي الحالي)
+         *
+         * لكننا نُضيف android_vr قبل ios لأنه لا يحتاج JS execution،
+         * وnبدّل ANDROID_TESTSUITE إلى آخر الترتيب لأنه مات.
+         *
+         * TV → ANDROID_VR → IOS → ANDROID → TV_EMBEDDED → ANDROID_TESTSUITE → WEB
          */
         val FALLBACK_CHAIN: List<InnerTubeClient> = listOf(
-            ANDROID_TESTSUITE,
-            ANDROID,
+            TV,
             ANDROID_VR,
             IOS,
-            ANDROID_EMBEDDED,
+            ANDROID,
             TV_EMBEDDED,
-            WEB
+            ANDROID_TESTSUITE,  // آخر الترتيب — PO Token gating
+            WEB                 // SABR-only في الغالب
         )
     }
 }

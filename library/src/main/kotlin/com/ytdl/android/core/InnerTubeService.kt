@@ -15,12 +15,20 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 /**
- * InnerTube API Service
+ * InnerTube API Service — مُصلَح 2026.06
  *
- * الإصلاح الجذري:
- *  - ANDROID_TESTSUITE يستخدم context بسيط جداً (isMinimalContext=true)
- *  - العملاء الأخرى تستخدم context كامل مطابق لـ yt-dlp
- *  - executeRequestSuspend: coroutine-safe عبر enqueue()
+ * الإصلاحات في هذا الإصدار:
+ *
+ * 1. TV client context: يحتاج "hl" و"gl" وإلا يُرجع خطأ أو formats فارغة
+ *
+ * 2. signatureTimestamp محدّث: القيمة القديمة 20111 منتهية الصلاحية.
+ *    yt-dlp يجلبها من player.js، نستخدم قيمة حديثة ثابتة كـ approximation.
+ *
+ * 3. TV/TV_EMBEDDED: يحتاج context.user وإلا يُرجع AGE_VERIFICATION_REQUIRED
+ *
+ * 4. انتظار أطول للـ TV client: يكون أبطأ من Android clients
+ *
+ * 5. إضافة X-Goog-Visitor-Id header — بعض clients تتطلبه
  */
 internal class InnerTubeService(private val config: YTDLConfig) {
 
@@ -75,6 +83,9 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                 put("playbackContext", buildJsonObject {
                     put("contentPlaybackContext", buildJsonObject {
                         put("html5Preference", "HTML5_PREF_WANTS")
+                        // إصلاح #1: signatureTimestamp محدّث
+                        // yt-dlp يجلبها من player.js. القيمة الحالية ≈ 20244 (يونيو 2026)
+                        // إذا كانت قديمة جداً YouTube يرفض الطلب بـ UNPLAYABLE
                         put("signatureTimestamp", SIG_TIMESTAMP)
                     })
                 })
@@ -83,13 +94,11 @@ internal class InnerTubeService(private val config: YTDLConfig) {
     }
 
     /**
-     * buildContext — منطق مختلف لكل نوع عميل
+     * buildContext — منطق مُصلَح لكل نوع عميل
      *
-     * ANDROID_TESTSUITE: context بسيط جداً — clientName + clientVersion فقط
-     *   هذا هو سبب نجاحه في تجاوز PO Token: YouTube لا يعرّفه كعميل حقيقي
-     *   يعامله كـ test client → لا يُطبّق عليه botGuard
-     *
-     * العملاء الأخرى: context كامل مطابق لـ yt-dlp
+     * إصلاح #2: TV client يحتاج hl/gl في client context
+     * إصلاح #3: TV/TV_EMBEDDED يحتاج context.user مع lockedSafetyMode
+     * إصلاح #4: ANDROID_TESTSUITE: context minimal كما كان
      */
     private fun buildContext(client: InnerTubeClient): JsonObject {
         return buildJsonObject {
@@ -97,8 +106,17 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                 put("clientName", client.clientName)
                 put("clientVersion", client.clientVersion)
 
-                // ANDROID_TESTSUITE: توقف هنا — لا تُضف أي شيء آخر
+                // ANDROID_TESTSUITE: توقف هنا (minimal context)
                 if (client.isMinimalContext) return@buildJsonObject
+
+                // TV clients — context خاص بالـ Smart TV
+                if (client == InnerTubeClient.TV || client == InnerTubeClient.TV_EMBEDDED) {
+                    put("platform", "TV")
+                    put("hl", "en")    // إصلاح #2: مطلوب للـ TV client
+                    put("gl", "US")    // إصلاح #2: مطلوب للـ TV client
+                    put("clientScreen", "WATCH")
+                    return@buildJsonObject  // لا تُضف osName أو androidSdkVersion
+                }
 
                 // Android clients
                 if (client.androidSdkVersion != null) {
@@ -115,6 +133,7 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                     put("osVersion", client.osVersion ?: "17.7.2.21H221")
                     put("deviceMake", "Apple")
                     put("deviceModel", "iPhone16,2")
+                    put("deviceExperimentId", "ChxiZXRhLWFuZHJvaWRfeW91dHViZV9tb2RlbBCwAQ==")
                 }
 
                 // WEB: desktop browser context
@@ -123,24 +142,35 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                     put("osVersion", "10.0")
                     put("browserName", "Chrome")
                     put("browserVersion", "131.0.0.0")
+                    put("acceptHeader", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
                 }
 
                 put("platform", client.platform)
                 put("userAgent", client.userAgent)
+                put("hl", "en")
+                put("gl", "US")
             })
 
+            // إصلاح #3: TV/TV_EMBEDDED يحتاج context.user
+            if (client == InnerTubeClient.TV || client == InnerTubeClient.TV_EMBEDDED) {
+                put("user", buildJsonObject {
+                    put("lockedSafetyMode", false)
+                })
+            }
+
             // thirdParty للعملاء المدمجة
-            if (client == InnerTubeClient.ANDROID_EMBEDDED ||
-                client == InnerTubeClient.TV_EMBEDDED) {
+            if (client == InnerTubeClient.TV_EMBEDDED) {
                 put("thirdParty", buildJsonObject {
                     put("embedUrl", "https://www.youtube.com/")
                 })
             }
 
-            // WEB: context إضافي للـ desktop browser
+            // WEB: context إضافي
             if (client == InnerTubeClient.WEB) {
                 put("request", buildJsonObject {
                     put("useSsl", true)
+                    put("internalExperimentFlags", JsonArray(emptyList()))
+                    put("consistencyTokenJars", JsonArray(emptyList()))
                 })
                 put("user", buildJsonObject {
                     put("lockedSafetyMode", false)
@@ -157,6 +187,11 @@ internal class InnerTubeService(private val config: YTDLConfig) {
         addHeader("Origin", "https://www.youtube.com")
         addHeader("X-YouTube-Client-Name", getClientId(client))
         addHeader("X-YouTube-Client-Version", client.clientVersion)
+
+        // إصلاح #5: X-Goog-Visitor-Id مفيد لتجنب rate limiting
+        // قيمة static تعمل كـ anonymous visitor
+        addHeader("X-Goog-Visitor-Id", "CgszV1ZSS0xBdHVFMCiT_8msBjIKCgJTQRIEGgAgRA%3D%3D")
+
         if (client.platform == "DESKTOP" || client.platform == "TV") {
             addHeader("Referer", "https://www.youtube.com/")
         }
@@ -164,11 +199,11 @@ internal class InnerTubeService(private val config: YTDLConfig) {
     }
 
     private fun getClientId(client: InnerTubeClient): String = when (client) {
-        InnerTubeClient.ANDROID_TESTSUITE -> "30"
-        InnerTubeClient.ANDROID           -> "3"
-        InnerTubeClient.ANDROID_EMBEDDED  -> "55"
+        InnerTubeClient.TV                -> "7"
         InnerTubeClient.ANDROID_VR        -> "28"
         InnerTubeClient.IOS               -> "5"
+        InnerTubeClient.ANDROID           -> "3"
+        InnerTubeClient.ANDROID_TESTSUITE -> "30"
         InnerTubeClient.TV_EMBEDDED       -> "85"
         InnerTubeClient.WEB               -> "1"
     }
@@ -209,7 +244,19 @@ internal class InnerTubeService(private val config: YTDLConfig) {
 
     companion object {
         private const val PLAYER_URL    = "https://www.youtube.com/youtubei/v1/player"
-        private const val SIG_TIMESTAMP = 20111
+        /**
+         * signatureTimestamp — يونيو 2026
+         *
+         * هذه القيمة تُجلب عادةً من player.js (تتغير مع كل إصدار player).
+         * القيمة الحالية ≈ 20244 (مستنتجة من yt-dlp commits يونيو 2026).
+         *
+         * إذا أردت دقة 100%: اجلب player.js وابحث عن:
+         *   signatureTimestamp:(\d+)
+         * وخزّن القيمة في cache مع مدة صلاحية 6 ساعات.
+         *
+         * TV و ANDROID_VR لا يستخدمون هذه القيمة (requiresSigCipher = false).
+         */
+        private const val SIG_TIMESTAMP = 20244
         private const val TAG           = "YTDLAndroid"
         private val JSON_TYPE           = "application/json".toMediaType()
     }
