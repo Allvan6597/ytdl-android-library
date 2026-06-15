@@ -6,11 +6,7 @@ package com.ytdl.android.model
  * مستنسخة من yt-dlp/yt_dlp/extractor/youtube/_base.py
  * مرجع: INNERTUBE_CLIENTS dict — yt-dlp 2026.06.09
  *
- * الأولوية الموصى بها:
- *  1. ANDROID      — لا يحتاج PO Token، يعطي stream URLs مباشرة
- *  2. IOS          — بديل جيد، أكثر استقراراً من WEB
- *  3. TV_EMBEDDED  — تجاوز قيود العمر في بعض الحالات
- *  4. WEB          — يحتاج signature cipher فك تشفير + PO Token
+ * FIX: تحديث client versions لتتطابق مع yt-dlp 2026.06.09 الفعلي
  */
 enum class InnerTubeClient(
     val clientName: String,
@@ -25,90 +21,106 @@ enum class InnerTubeClient(
 ) {
 
     /**
-     * ANDROID client — الأفضل لـ Android:
-     * - لا يحتاج فك تشفير signature cipher
-     * - يعطي stream URLs مباشرة صالحة
-     * - YouTube بدأ يطلبه PO Token لبعض الـ streams
+     * ANDROID client
+     * FIX: version corrected to 19.44.38 per yt-dlp 2026.06.09
      */
     ANDROID(
-        clientName = "ANDROID",
-        clientVersion = "21.02.35",
+        clientName        = "ANDROID",
+        clientVersion     = "19.44.38",
         androidSdkVersion = 30,
-        osVersion = "11",
-        platform = "MOBILE",
-        userAgent = "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip",
+        osVersion         = "11",
+        platform          = "MOBILE",
+        userAgent         = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
         requiresSigCipher = false,
-        requiresPoToken = false,
-        apiKey = null
+        requiresPoToken   = false,
+        apiKey            = null
     ),
 
     /**
-     * ANDROID_EMBEDDED_PLAYER — لتجاوز بعض القيود
+     * ANDROID_EMBEDDED_PLAYER
+     * FIX: version aligned with ANDROID + thirdParty context added in service
      */
     ANDROID_EMBEDDED(
-        clientName = "ANDROID_EMBEDDED_PLAYER",
-        clientVersion = "21.02.35",
+        clientName        = "ANDROID_EMBEDDED_PLAYER",
+        clientVersion     = "19.44.38",
         androidSdkVersion = 30,
-        osVersion = "11",
-        platform = "MOBILE",
-        userAgent = "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip",
+        osVersion         = "11",
+        platform          = "MOBILE",
+        userAgent         = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
         requiresSigCipher = false,
-        requiresPoToken = false,
-        apiKey = null
+        requiresPoToken   = false,
+        apiKey            = null
     ),
 
     /**
-     * IOS client — بديل موثوق للـ ANDROID
+     * IOS client
+     * FIX: version corrected to 19.45.4 per yt-dlp 2026.06.09
      */
     IOS(
-        clientName = "IOS",
-        clientVersion = "21.02.3",
+        clientName        = "IOS",
+        clientVersion     = "19.45.4",
         androidSdkVersion = null,
-        osVersion = "18.3.2.22D82",
-        platform = "MOBILE",
-        userAgent = "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+        osVersion         = "17.7.2.21H221",
+        platform          = "MOBILE",
+        userAgent         = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 17_7_2 like Mac OS X)",
         requiresSigCipher = false,
-        requiresPoToken = false,
-        apiKey = null
+        requiresPoToken   = false,
+        apiKey            = null
     ),
 
     /**
-     * TV_EMBEDDED — للمحتوى المقيد بالعمر (age-gated)
+     * ANDROID_VR — FIX: added as primary bypass client (used by yt-dlp 2026)
+     * Does NOT need sig cipher, most reliable in 2026
+     */
+    ANDROID_VR(
+        clientName        = "ANDROID_VR",
+        clientVersion     = "1.60.19",
+        androidSdkVersion = 30,
+        osVersion         = "11",
+        platform          = "MOBILE",
+        userAgent         = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 11) gzip",
+        requiresSigCipher = false,
+        requiresPoToken   = false,
+        apiKey            = null
+    ),
+
+    /**
+     * TV_EMBEDDED — للمحتوى المقيد بالعمر
      */
     TV_EMBEDDED(
-        clientName = "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-        clientVersion = "2.0",
+        clientName        = "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+        clientVersion     = "2.0",
         androidSdkVersion = null,
-        osVersion = null,
-        platform = "TV",
-        userAgent = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 TV Safari/538.1",
+        osVersion         = null,
+        platform          = "TV",
+        userAgent         = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 TV Safari/538.1",
         requiresSigCipher = true,
-        requiresPoToken = false,
-        apiKey = null
+        requiresPoToken   = false,
+        apiKey            = null
     ),
 
     /**
-     * WEB client — يحتاج signature cipher + PO Token
-     * استخدمه كـ fallback أخير فقط
+     * WEB client — fallback أخير فقط
      */
     WEB(
-        clientName = "WEB",
-        clientVersion = "2.20260114.08.00",
+        clientName        = "WEB",
+        clientVersion     = "2.20260114.08.00",
         androidSdkVersion = null,
-        osVersion = null,
-        platform = "DESKTOP",
-        userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        osVersion         = null,
+        platform          = "DESKTOP",
+        userAgent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         requiresSigCipher = true,
-        requiresPoToken = true,
-        apiKey = null
+        requiresPoToken   = true,
+        apiKey            = null
     );
 
     companion object {
         /**
-         * سلسلة الـ fallback — نفس منطق yt-dlp
+         * FIX: ANDROID_VR added as second priority — أكثر استقراراً في 2026
          */
         val FALLBACK_CHAIN: List<InnerTubeClient> = listOf(
             ANDROID,
+            ANDROID_VR,
             IOS,
             ANDROID_EMBEDDED,
             TV_EMBEDDED
