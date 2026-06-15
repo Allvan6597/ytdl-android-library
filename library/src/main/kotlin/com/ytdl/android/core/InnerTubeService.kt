@@ -13,18 +13,14 @@ import okhttp3.logging.HttpLoggingInterceptor
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
- * InnerTube API Service — FIXED VERSION
+ * InnerTube API Service
  *
- * الإصلاحات:
- *  FIX-1: executeRequest() الآن coroutine-safe عبر suspendCancellableCoroutine + enqueue()
- *          (الإصدار القديم كان يستدعي .execute() الـ blocking داخل suspend function)
- *  FIX-2: تحسين buildContext() لتطابق yt-dlp 2026.06.09 بدقة
- *  FIX-3: إضافة thirdParty.embedUrl لعميل ANDROID_EMBEDDED
- *  FIX-4: إضافة client headers صحيحة لكل عميل
- *  FIX-5: تحسين معالجة الأخطاء — تسجيل HTTP status codes
+ * الإصلاح الجذري:
+ *  - ANDROID_TESTSUITE يستخدم context بسيط جداً (isMinimalContext=true)
+ *  - العملاء الأخرى تستخدم context كامل مطابق لـ yt-dlp
+ *  - executeRequestSuspend: coroutine-safe عبر enqueue()
  */
 internal class InnerTubeService(private val config: YTDLConfig) {
 
@@ -33,39 +29,32 @@ internal class InnerTubeService(private val config: YTDLConfig) {
         isLenient = true
     }
 
-    private val httpClient: OkHttpClient = buildClient()
-
-    private fun buildClient(): OkHttpClient {
-        val builder = OkHttpClient.Builder()
-            .connectTimeout(config.connectTimeoutSec, TimeUnit.SECONDS)
-            .readTimeout(config.readTimeoutSec, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
-
-        if (config.enableLogging) {
-            val logging = HttpLoggingInterceptor()
-            logging.level = HttpLoggingInterceptor.Level.BODY
-            builder.addInterceptor(logging)
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(config.connectTimeoutSec, TimeUnit.SECONDS)
+        .readTimeout(config.readTimeoutSec, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .apply {
+            if (config.enableLogging) {
+                addInterceptor(HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BODY
+                })
+            }
         }
+        .build()
 
-        return builder.build()
-    }
-
-    /**
-     * FIX-1: استدعاء InnerTube /player — الآن coroutine-safe
-     */
     suspend fun fetchPlayerResponse(
         videoId: String,
         client: InnerTubeClient
     ): JsonObject? = withContext(Dispatchers.IO) {
 
-        val requestBody = buildPlayerRequestBody(videoId, client)
+        val body = buildPlayerRequestBody(videoId, client)
 
         val request = Request.Builder()
             .url(PLAYER_URL)
-            .post(requestBody.toString().toRequestBody(JSON_MEDIA_TYPE))
-            .apply { addInnerTubeHeaders(client) }
+            .post(body.toString().toRequestBody(JSON_TYPE))
+            .apply { addHeaders(client) }
             .build()
 
         val responseStr = executeRequestSuspend(request) ?: return@withContext null
@@ -75,27 +64,18 @@ internal class InnerTubeService(private val config: YTDLConfig) {
         }.getOrNull()
     }
 
-    /**
-     * FIX-2: buildPlayerRequestBody — aligned with yt-dlp 2026.06.09 exactly
-     *
-     * مرجع: yt-dlp _build_innertube_request() — _base.py
-     */
-    private fun buildPlayerRequestBody(
-        videoId: String,
-        client: InnerTubeClient
-    ): JsonObject {
+    private fun buildPlayerRequestBody(videoId: String, client: InnerTubeClient): JsonObject {
         return buildJsonObject {
             put("videoId", videoId)
             put("context", buildContext(client))
             put("contentCheckOk", true)
             put("racyCheckOk", true)
 
-            // playbackContext فقط للعملاء التي تحتاج signature
             if (client.requiresSigCipher) {
                 put("playbackContext", buildJsonObject {
                     put("contentPlaybackContext", buildJsonObject {
                         put("html5Preference", "HTML5_PREF_WANTS")
-                        put("signatureTimestamp", getSignatureTimestamp())
+                        put("signatureTimestamp", SIG_TIMESTAMP)
                     })
                 })
             }
@@ -103,9 +83,13 @@ internal class InnerTubeService(private val config: YTDLConfig) {
     }
 
     /**
-     * FIX-3: buildContext — مطابق لـ yt-dlp 2026.06.09 بدقة
+     * buildContext — منطق مختلف لكل نوع عميل
      *
-     * مرجع: yt-dlp _generate_api_headers() context object
+     * ANDROID_TESTSUITE: context بسيط جداً — clientName + clientVersion فقط
+     *   هذا هو سبب نجاحه في تجاوز PO Token: YouTube لا يعرّفه كعميل حقيقي
+     *   يعامله كـ test client → لا يُطبّق عليه botGuard
+     *
+     * العملاء الأخرى: context كامل مطابق لـ yt-dlp
      */
     private fun buildContext(client: InnerTubeClient): JsonObject {
         return buildJsonObject {
@@ -113,7 +97,10 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                 put("clientName", client.clientName)
                 put("clientVersion", client.clientVersion)
 
-                // Android-specific
+                // ANDROID_TESTSUITE: توقف هنا — لا تُضف أي شيء آخر
+                if (client.isMinimalContext) return@buildJsonObject
+
+                // Android clients
                 if (client.androidSdkVersion != null) {
                     put("androidSdkVersion", client.androidSdkVersion)
                     put("osName", "Android")
@@ -122,7 +109,7 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                     put("deviceModel", "Pixel 7")
                 }
 
-                // iOS-specific
+                // iOS
                 if (client == InnerTubeClient.IOS) {
                     put("osName", "iPhone")
                     put("osVersion", client.osVersion ?: "17.7.2.21H221")
@@ -134,7 +121,7 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                 put("userAgent", client.userAgent)
             })
 
-            // FIX-4: thirdParty context للـ ANDROID_EMBEDDED (مطلوب!)
+            // thirdParty للعملاء المدمجة
             if (client == InnerTubeClient.ANDROID_EMBEDDED ||
                 client == InnerTubeClient.TV_EMBEDDED) {
                 put("thirdParty", buildJsonObject {
@@ -144,18 +131,14 @@ internal class InnerTubeService(private val config: YTDLConfig) {
         }
     }
 
-    /**
-     * FIX-5: HTTP headers مطابقة لـ yt-dlp
-     */
-    private fun Request.Builder.addInnerTubeHeaders(client: InnerTubeClient): Request.Builder {
+    private fun Request.Builder.addHeaders(client: InnerTubeClient): Request.Builder {
         addHeader("User-Agent", config.customUserAgent ?: client.userAgent)
         addHeader("Content-Type", "application/json")
         addHeader("Accept", "*/*")
-        addHeader("Accept-Language", "en-US,en;q=0.9")  // FIX: en ليس ar (YouTube يرفض بعض المناطق)
+        addHeader("Accept-Language", "en-US,en;q=0.9")
         addHeader("Origin", "https://www.youtube.com")
         addHeader("X-YouTube-Client-Name", getClientId(client))
         addHeader("X-YouTube-Client-Version", client.clientVersion)
-        // FIX: Referer غير مطلوب للـ mobile clients وقد يسبب رفض
         if (client.platform == "DESKTOP" || client.platform == "TV") {
             addHeader("Referer", "https://www.youtube.com/")
         }
@@ -163,61 +146,42 @@ internal class InnerTubeService(private val config: YTDLConfig) {
     }
 
     private fun getClientId(client: InnerTubeClient): String = when (client) {
-        InnerTubeClient.ANDROID          -> "3"
-        InnerTubeClient.ANDROID_EMBEDDED -> "55"
-        InnerTubeClient.ANDROID_VR       -> "28"
-        InnerTubeClient.IOS              -> "5"
-        InnerTubeClient.TV_EMBEDDED      -> "85"
-        InnerTubeClient.WEB              -> "1"
+        InnerTubeClient.ANDROID_TESTSUITE -> "30"
+        InnerTubeClient.ANDROID           -> "3"
+        InnerTubeClient.ANDROID_EMBEDDED  -> "55"
+        InnerTubeClient.ANDROID_VR        -> "28"
+        InnerTubeClient.IOS               -> "5"
+        InnerTubeClient.TV_EMBEDDED       -> "85"
     }
 
-    private fun getSignatureTimestamp(): Int = 20111
-
-    /**
-     * FIX-1 CORE: coroutine-safe HTTP request
-     *
-     * الإصدار القديم كان يستخدم .execute() الـ blocking داخل suspend function.
-     * هذا يسبب NetworkOnMainThreadException أو deadlock على Android.
-     * الحل: suspendCancellableCoroutine + OkHttp .enqueue()
-     */
+    /** coroutine-safe HTTP — enqueue بدلاً من execute */
     private suspend fun executeRequestSuspend(request: Request): String? {
-        return suspendCancellableCoroutine { continuation ->
+        return suspendCancellableCoroutine { cont ->
             val call = httpClient.newCall(request)
-
-            continuation.invokeOnCancellation {
-                call.cancel()
-            }
+            cont.invokeOnCancellation { call.cancel() }
 
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    if (continuation.isActive) {
-                        continuation.resume(null)  // network error → null → try next client
-                    }
+                    if (cont.isActive) cont.resume(null)
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    if (!continuation.isActive) {
-                        response.close()
-                        return
-                    }
+                    if (!cont.isActive) { response.close(); return }
                     try {
                         val body = if (response.isSuccessful) {
                             response.body?.string()
                         } else {
-                            // FIX: log status code for debugging
                             if (config.enableLogging) {
-                                android.util.Log.w(
-                                    "YTDLAndroid",
-                                    "HTTP ${response.code} for client ${request.header("X-YouTube-Client-Name")}"
-                                )
+                                android.util.Log.w(TAG,
+                                    "HTTP ${response.code} — client ${request.header("X-YouTube-Client-Name")}")
                             }
                             null
                         }
                         response.close()
-                        continuation.resume(body)
+                        cont.resume(body)
                     } catch (e: Exception) {
                         response.close()
-                        continuation.resume(null)
+                        cont.resume(null)
                     }
                 }
             })
@@ -225,7 +189,9 @@ internal class InnerTubeService(private val config: YTDLConfig) {
     }
 
     companion object {
-        private const val PLAYER_URL = "https://www.youtube.com/youtubei/v1/player"
-        private val JSON_MEDIA_TYPE = "application/json".toMediaType()
+        private const val PLAYER_URL    = "https://www.youtube.com/youtubei/v1/player"
+        private const val SIG_TIMESTAMP = 20111
+        private const val TAG           = "YTDLAndroid"
+        private val JSON_TYPE           = "application/json".toMediaType()
     }
 }

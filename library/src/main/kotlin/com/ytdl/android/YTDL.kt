@@ -212,7 +212,7 @@ class YTDL private constructor(
 
         fun build(): YTDL {
             val service = InnerTubeService(config)
-            val extractor = YouTubeExtractor(service)
+            val extractor = YouTubeExtractor(service, config.enableLogging)
             val downloader = StreamDownloader(
                 connectTimeoutSec = config.connectTimeoutSec,
                 readTimeoutSec = config.readTimeoutSec

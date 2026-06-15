@@ -2,11 +2,7 @@ package com.ytdl.android.model
 
 /**
  * InnerTube Client Configurations
- *
- * مستنسخة من yt-dlp/yt_dlp/extractor/youtube/_base.py
- * مرجع: INNERTUBE_CLIENTS dict — yt-dlp 2026.06.09
- *
- * FIX: تحديث client versions لتتطابق مع yt-dlp 2026.06.09 الفعلي
+ * مرجع: yt-dlp INNERTUBE_CLIENTS — 2026.06.09
  */
 enum class InnerTubeClient(
     val clientName: String,
@@ -17,12 +13,34 @@ enum class InnerTubeClient(
     val userAgent: String,
     val requiresSigCipher: Boolean,
     val requiresPoToken: Boolean,
-    val apiKey: String?
+    val apiKey: String?,
+    /** إذا كان true: لا تُرسل أي context fields إضافية */
+    val isMinimalContext: Boolean = false
 ) {
 
     /**
-     * ANDROID client
-     * FIX: version corrected to 19.44.38 per yt-dlp 2026.06.09
+     * ANDROID_TESTSUITE — الأول في 2026
+     *
+     * السبب: YouTube لا يُطبّق PO Token gating على هذا العميل
+     * Context بسيط جداً — بدون osName/deviceMake/androidSdkVersion
+     * مرجع yt-dlp: client ID 30, INNERTUBE_CLIENTS['ANDROID_TESTSUITE']
+     */
+    ANDROID_TESTSUITE(
+        clientName        = "ANDROID_TESTSUITE",
+        clientVersion     = "1.9",
+        androidSdkVersion = null,   // مهم: لا ترسل هذا
+        osVersion         = null,
+        platform          = "MOBILE",
+        userAgent         = "com.google.android.youtube/1.9 (Linux; U; Android 6.0; Nexus 5 Build/MRA58N) gzip",
+        requiresSigCipher = false,
+        requiresPoToken   = false,
+        apiKey            = null,
+        isMinimalContext  = true    // context بسيط فقط clientName+clientVersion
+    ),
+
+    /**
+     * ANDROID — fallback موثوق
+     * version 19.44.38 per yt-dlp 2026.06.09
      */
     ANDROID(
         clientName        = "ANDROID",
@@ -37,24 +55,24 @@ enum class InnerTubeClient(
     ),
 
     /**
-     * ANDROID_EMBEDDED_PLAYER
-     * FIX: version aligned with ANDROID + thirdParty context added in service
+     * ANDROID_VR — bypass client مثبت في yt-dlp 2026
+     * client ID: 28
      */
-    ANDROID_EMBEDDED(
-        clientName        = "ANDROID_EMBEDDED_PLAYER",
-        clientVersion     = "19.44.38",
+    ANDROID_VR(
+        clientName        = "ANDROID_VR",
+        clientVersion     = "1.60.19",
         androidSdkVersion = 30,
         osVersion         = "11",
         platform          = "MOBILE",
-        userAgent         = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
+        userAgent         = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 11) gzip",
         requiresSigCipher = false,
         requiresPoToken   = false,
         apiKey            = null
     ),
 
     /**
-     * IOS client
-     * FIX: version corrected to 19.45.4 per yt-dlp 2026.06.09
+     * IOS — بديل جيد
+     * version 19.45.4 per yt-dlp 2026.06.09
      */
     IOS(
         clientName        = "IOS",
@@ -69,16 +87,15 @@ enum class InnerTubeClient(
     ),
 
     /**
-     * ANDROID_VR — FIX: added as primary bypass client (used by yt-dlp 2026)
-     * Does NOT need sig cipher, most reliable in 2026
+     * ANDROID_EMBEDDED — للمحتوى المقيد
      */
-    ANDROID_VR(
-        clientName        = "ANDROID_VR",
-        clientVersion     = "1.60.19",
+    ANDROID_EMBEDDED(
+        clientName        = "ANDROID_EMBEDDED_PLAYER",
+        clientVersion     = "19.44.38",
         androidSdkVersion = 30,
         osVersion         = "11",
         platform          = "MOBILE",
-        userAgent         = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 11) gzip",
+        userAgent         = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
         requiresSigCipher = false,
         requiresPoToken   = false,
         apiKey            = null
@@ -97,28 +114,15 @@ enum class InnerTubeClient(
         requiresSigCipher = true,
         requiresPoToken   = false,
         apiKey            = null
-    ),
-
-    /**
-     * WEB client — fallback أخير فقط
-     */
-    WEB(
-        clientName        = "WEB",
-        clientVersion     = "2.20260114.08.00",
-        androidSdkVersion = null,
-        osVersion         = null,
-        platform          = "DESKTOP",
-        userAgent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        requiresSigCipher = true,
-        requiresPoToken   = true,
-        apiKey            = null
     );
 
     companion object {
         /**
-         * FIX: ANDROID_VR added as second priority — أكثر استقراراً في 2026
+         * Fallback chain 2026:
+         * ANDROID_TESTSUITE أولاً — يتجاوز PO Token gating
          */
         val FALLBACK_CHAIN: List<InnerTubeClient> = listOf(
+            ANDROID_TESTSUITE,
             ANDROID,
             ANDROID_VR,
             IOS,
