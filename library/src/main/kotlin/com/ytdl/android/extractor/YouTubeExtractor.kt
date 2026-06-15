@@ -32,10 +32,15 @@ internal class YouTubeExtractor(
             } catch (e: Exception) {
                 val msg = e.message ?: "unknown error"
                 errors.add("${client.clientName}: $msg")
-                // إذا كان الفيديو UNPLAYABLE فعلاً، لا فائدة من المحاولة بعملاء أخرى
-                if (msg.contains("UNPLAYABLE") || msg.contains("ERROR")) {
+                // لا توقف الـ fallback — بعض العملاء يُرجع UNPLAYABLE/ERROR
+                // بينما عميل آخر قد ينجح (حجب جغرافي، قيود عمر، إلخ)
+                // استثناء وحيد: إذا كان الخطأ "video deleted" أو "private" الصريح
+                if (msg.contains("This video is unavailable") ||
+                    msg.contains("Private video") ||
+                    msg.contains("This video has been removed")) {
                     break
                 }
+                // continue إلى العميل التالي في جميع الحالات الأخرى
             }
         }
 

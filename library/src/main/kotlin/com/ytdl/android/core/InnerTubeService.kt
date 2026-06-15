@@ -117,6 +117,14 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                     put("deviceModel", "iPhone16,2")
                 }
 
+                // WEB: desktop browser context
+                if (client == InnerTubeClient.WEB) {
+                    put("osName", "Windows")
+                    put("osVersion", "10.0")
+                    put("browserName", "Chrome")
+                    put("browserVersion", "131.0.0.0")
+                }
+
                 put("platform", client.platform)
                 put("userAgent", client.userAgent)
             })
@@ -126,6 +134,16 @@ internal class InnerTubeService(private val config: YTDLConfig) {
                 client == InnerTubeClient.TV_EMBEDDED) {
                 put("thirdParty", buildJsonObject {
                     put("embedUrl", "https://www.youtube.com/")
+                })
+            }
+
+            // WEB: context إضافي للـ desktop browser
+            if (client == InnerTubeClient.WEB) {
+                put("request", buildJsonObject {
+                    put("useSsl", true)
+                })
+                put("user", buildJsonObject {
+                    put("lockedSafetyMode", false)
                 })
             }
         }
@@ -152,6 +170,7 @@ internal class InnerTubeService(private val config: YTDLConfig) {
         InnerTubeClient.ANDROID_VR        -> "28"
         InnerTubeClient.IOS               -> "5"
         InnerTubeClient.TV_EMBEDDED       -> "85"
+        InnerTubeClient.WEB               -> "1"
     }
 
     /** coroutine-safe HTTP — enqueue بدلاً من execute */

@@ -119,8 +119,8 @@ sealed class DownloadResult {
  * إعدادات المكتبة
  */
 data class YTDLConfig(
-    /** عميل InnerTube المفضل — ANDROID أكثر استقراراً بدون PO Token */
-    val preferredClient: InnerTubeClient = InnerTubeClient.ANDROID,
+    /** عميل InnerTube المفضل — ANDROID_TESTSUITE أولاً لتجاوز PO Token gating */
+    val preferredClient: InnerTubeClient = InnerTubeClient.ANDROID_TESTSUITE,
     /** تفعيل Logging للـ HTTP requests */
     val enableLogging: Boolean = false,
     /** مهلة الاتصال بالثواني */

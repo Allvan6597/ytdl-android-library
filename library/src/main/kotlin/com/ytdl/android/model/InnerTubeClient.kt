@@ -114,12 +114,30 @@ enum class InnerTubeClient(
         requiresSigCipher = true,
         requiresPoToken   = false,
         apiKey            = null
+    ),
+
+    /**
+     * WEB — آخر fallback للمحتوى المحجوب جغرافياً
+     * يُرجع streamingData أحياناً عندما تفشل كل العملاء الأخرى
+     * مرجع yt-dlp: client ID 1
+     */
+    WEB(
+        clientName        = "WEB",
+        clientVersion     = "2.20250101.00.00",
+        androidSdkVersion = null,
+        osVersion         = null,
+        platform          = "DESKTOP",
+        userAgent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        requiresSigCipher = true,
+        requiresPoToken   = true,   // WEB يحتاج PO Token في الغالب — لكن نجرّبه كـ last resort
+        apiKey            = null
     );
 
     companion object {
         /**
          * Fallback chain 2026:
          * ANDROID_TESTSUITE أولاً — يتجاوز PO Token gating
+         * WEB أخيراً — last resort للمحتوى المحجوب جغرافياً
          */
         val FALLBACK_CHAIN: List<InnerTubeClient> = listOf(
             ANDROID_TESTSUITE,
@@ -127,7 +145,8 @@ enum class InnerTubeClient(
             ANDROID_VR,
             IOS,
             ANDROID_EMBEDDED,
-            TV_EMBEDDED
+            TV_EMBEDDED,
+            WEB
         )
     }
 }
