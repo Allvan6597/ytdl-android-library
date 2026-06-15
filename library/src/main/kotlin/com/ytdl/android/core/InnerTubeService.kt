@@ -120,9 +120,8 @@ internal class InnerTubeService(private val config: YTDLConfig) {
             put("client", buildJsonObject {
                 put("clientName", client.clientName)
                 put("clientVersion", client.clientVersion)
-                put("hl", "ar")          // اللغة
-                put("gl", "SA")          // المنطقة
-                put("utcOffsetMinutes", 180)
+                // Important: yt-dlp doesn't hardcode hl/gl/utcOffsetMinutes for mobile clients.
+                // Hardcoding them can trigger YouTube playability rejection.
 
                 // Android-specific fields
                 if (client.androidSdkVersion != null) {
